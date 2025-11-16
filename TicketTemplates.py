@@ -12,9 +12,11 @@ OAUTH2_TOKEN_URL = "youroauth2URL"
 # OAuth2 client credentials (replace these with your actual credentials)
 CLIENT_ID = "yourclientID"
 CLIENT_SECRET = "yourclientsecret"
-SCOPE = "all"  # Usually, it's something like 'api' or the specific scope your app needs
+SCOPE = "all"  # Usually something like 'api'
 
-# Function to obtain OAuth2 access token using client credentials
+# -------------------------------------------
+# OAuth2 Token Function
+# -------------------------------------------
 def get_oauth_token():
     data = {
         "grant_type": "client_credentials",
@@ -22,20 +24,40 @@ def get_oauth_token():
         "client_secret": CLIENT_SECRET,
         "scope": SCOPE
     }
-    
+
     response = requests.post(OAUTH2_TOKEN_URL, data=data)
     auth_token = response.json().get("access_token")
-    
+
     if response.status_code == 200:
         return auth_token
     else:
         raise Exception(f"Failed to obtain OAuth token: {response.text}")
 
-# Function to process CSV file and map tasks
+
+# -------------------------------------------
+# TicketType → ID Mapping
+# -------------------------------------------
+def resolve_type_id(tickettype):
+    if not tickettype:
+        return 1  # default fallback
+
+    tickettype = tickettype.strip().lower()
+
+    if tickettype == "incident":
+        return 1
+    if tickettype == "service request":
+        return 3
+
+    return 1  # fallback
+
+
+# -------------------------------------------
+# Process CSV
+# -------------------------------------------
 def process_csv(file_path):
     tasks_map = {}
 
-    # Try reading as UTF-8 first, fallback to Windows-1252 if it fails
+    # Try UTF-8, fallback to cp1252
     try:
         with open(file_path, newline='', encoding='utf-8-sig') as csvfile:
             reader = csv.DictReader(csvfile)
@@ -46,79 +68,94 @@ def process_csv(file_path):
             reader = csv.DictReader(csvfile)
             rows = list(reader)
 
-    # Process the rows into tasks_map
+    # Process rows
     for row in rows:
         try:
             key = f"{row['Type']}>{row['Subtype']}>{row['Item']}"
             task = row.get('Task', '').strip()
-            priority = row.get('Priority', '1')
+            ticket_type = row.get('TicketType', '').strip()
+
+            if key not in tasks_map:
+                tasks_map[key] = {
+                    "tasks": [],
+                    "tickettype": ticket_type
+                }
 
             if task:
-                if key not in tasks_map:
-                    tasks_map[key] = []
-                tasks_map[key].append({"text": task})
-        except KeyError as e:
-            print(f"⚠️ Missing expected column in CSV: {e}")
+                tasks_map[key]["tasks"].append({"text": task})
+
         except Exception as e:
             print(f"⚠️ Error processing row: {e}")
 
     return tasks_map
 
-# Function to create categories in HaloPSA
-def create_category(name, token):
-    
+
+# -------------------------------------------
+# Create Category
+# -------------------------------------------
+def create_category(name, ticket_type, token):
+
+    type_id = resolve_type_id(ticket_type)
+
     category_data = [
         {
             "category_name": name,
             "value": name,
-			"type_id": 1
+            "type_id": type_id
         }
     ]
-    
+
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-    
-    category_response = requests.post(CATEGORY_URL, headers=headers, json=category_data)
-    if category_response.status_code == 201:
-        print(f"✔️ Category '{name}' created successfully!")
-    else:
-        print(f"❌ Error: {category_response.status_code}, Failed to create category '{name}'")
 
-# Function to create templates in HaloPSA
-def create_template(name, tasks, token):
+    category_resp = requests.post(CATEGORY_URL, headers=headers, json=category_data)
+
+    if category_resp.status_code == 201:
+        print(f"✔️ Category '{name}' created successfully! (type_id={type_id})")
+    else:
+        print(f"❌ Failed to create category '{name}' → {category_resp.text}")
+
+
+# -------------------------------------------
+# Create Template
+# -------------------------------------------
+def create_template(name, tasks, ticket_type, token):
+
+    tickettype_id = resolve_type_id(ticket_type)
 
     template_data = [
         {
             "name": name,
-            "tickettype_id": 1,
+            "tickettype_id": tickettype_id,
             "todo_list": tasks
         }
     ]
-    
+
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-    
-    template_response = requests.post(TEMPLATE_URL, headers=headers, json=template_data)
-    if template_response.status_code == 201:
+
+    template_resp = requests.post(TEMPLATE_URL, headers=headers, json=template_data)
+
+    if template_resp.status_code == 201:
         try:
-            response_data = template_response.json()
-            template_id = response_data['id']
-            print(f"✔️ Template '{name}' created successfully!")
+            template_id = resp.json().get("id")
+            print(f"✔️ Template '{name}' created successfully! (tickettype_id={tickettype_id})")
             return template_id
-        except (KeyError, IndexError, ValueError) as e:
-            print(f"❌ Parsing Error: {e}")
-            #print(f"Raw Response: {template_response.status_code} {template_response.text}")
+        except:
+            print("❌ Error parsing template response")
             return None
     else:
-        print(f"❌ Error: {template_response.status_code}, Failed to create template '{name}'")
-        #print(f"Response Text: {template_response.text}")
+        print(f"❌ Failed to create template '{name}' → {template_resp.text}")
         return None
 
-# Function to create ticket rules in HaloPSA
+
+# -------------------------------------------
+# Create Rule
+# -------------------------------------------
 def create_rule(name, template_id, token):
 
     rule_data = [
@@ -139,48 +176,51 @@ def create_rule(name, template_id, token):
             "new_template_id": template_id
         }
     ]
-    
+
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json"
     }
-    
-    rule_response = requests.post(RULE_URL, headers=headers, json=rule_data)
-    if rule_response.status_code == 201:
+
+    rule_resp = requests.post(RULE_URL, headers=headers, json=rule_data)
+
+    if rule_resp.status_code == 201:
         print(f"✔️ Rule for '{name}' created successfully!")
     else:
-        print(f"❌ Error: {rule_response.status_code}, Failed to create rule for '{name}'")
-        #print(f"Response Text: {rule_response.text}")
+        print(f"❌ Failed to create rule for '{name}' → {rule_resp.text}")
 
-# Main function
+
+# -------------------------------------------
+# Main Script
+# -------------------------------------------
 def main():
     try:
-        # Step 1: Get OAuth2 token
         token = get_oauth_token()
-
-        # Step 2: Process CSV file
         file_path = os.path.expanduser("~/Downloads/ticket-template.csv")
         tasks_map = process_csv(file_path)
-        
-        # Step 3: Create categories, templates, and rules
-        for name, tasks in tasks_map.items():
-            create_category(name, token)    # create category
-            template_id = create_template(name, tasks, token)    # create template
+
+        for name, data in tasks_map.items():
+            ticket_type = data["tickettype"]
+            tasks = data["tasks"]
+
+            create_category(name, ticket_type, token)
+            template_id = create_template(name, tasks, ticket_type, token)
+
             if template_id:
-                create_rule(name, template_id, token)    # create rule
+                create_rule(name, template_id, token)
             else:
-                print(f"⚠️ Skipping rule creation for '{name}' due to missing template ID.")
+                print(f"⚠️ Skipping rule creation for '{name}' (no template ID)")
 
     except Exception as e:
         print(f"Error: {e}")
-        #print(f"Response Text: {e.response.text}")
 
-if __name__ == "__main__":
-    main()
+
+# -------------------------------------------
+# Streamlit Callable Function
+# -------------------------------------------
 def run_halo_upload(csv_path, base_url, oauth_url, client_id, client_secret):
     global API_BASE_URL, CATEGORY_URL, TEMPLATE_URL, RULE_URL, OAUTH2_TOKEN_URL, CLIENT_ID, CLIENT_SECRET
 
-    # Override global config dynamically
     API_BASE_URL = base_url
     CATEGORY_URL = f"{API_BASE_URL}/category"
     TEMPLATE_URL = f"{API_BASE_URL}/template"
@@ -193,14 +233,24 @@ def run_halo_upload(csv_path, base_url, oauth_url, client_id, client_secret):
         token = get_oauth_token()
         tasks_map = process_csv(csv_path)
 
-        for name, tasks in tasks_map.items():
-            create_category(name, token)
-            template_id = create_template(name, tasks, token)
+        for name, data in tasks_map.items():
+            ticket_type = data["tickettype"]
+            tasks = data["tasks"]
+
+            create_category(name, ticket_type, token)
+            template_id = create_template(name, tasks, ticket_type, token)
+
             if template_id:
                 create_rule(name, template_id, token)
             else:
                 print(f"⚠️ Skipping rule creation for '{name}' due to missing template ID.")
+
         return "Upload completed successfully."
 
     except Exception as e:
         return f"Error: {e}"
+
+
+# Run if standalone
+if __name__ == "__main__":
+    main()
