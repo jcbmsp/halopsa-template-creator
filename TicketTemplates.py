@@ -43,9 +43,9 @@ def resolve_type_id(tickettype):
 
     tickettype = tickettype.strip().lower()
 
-    if tickettype == "incident":
+    if tickettype == "Incident":
         return 1
-    if tickettype == "service request":
+    if tickettype == "Service Request":
         return 3
 
     return 1  # fallback
@@ -93,15 +93,13 @@ def process_csv(file_path):
 # -------------------------------------------
 # Create Category
 # -------------------------------------------
-def create_category(name, ticket_type, token):
-
-    type_id = resolve_type_id(ticket_type)
+def create_category(name, token):
 
     category_data = [
         {
             "category_name": name,
             "value": name,
-            "type_id": type_id
+            "type_id": 1
         }
     ]
 
@@ -113,7 +111,7 @@ def create_category(name, ticket_type, token):
     category_resp = requests.post(CATEGORY_URL, headers=headers, json=category_data)
 
     if category_resp.status_code == 201:
-        print(f"✔️ Category '{name}' created successfully! (type_id={type_id})")
+        print(f"✔️ Category '{name}' created successfully!")
     else:
         print(f"❌ Failed to create category '{name}' → {category_resp.text}")
 
@@ -142,8 +140,8 @@ def create_template(name, tasks, ticket_type, token):
 
     if template_resp.status_code == 201:
         try:
-            template_id = resp.json().get("id")
-            print(f"✔️ Template '{name}' created successfully! (tickettype_id={tickettype_id})")
+            template_id = template_resp.json().get("id")
+            print(f"✔️ Template '{name}' created successfully!")
             return template_id
         except:
             print("❌ Error parsing template response")
@@ -203,7 +201,7 @@ def main():
             ticket_type = data["tickettype"]
             tasks = data["tasks"]
 
-            create_category(name, ticket_type, token)
+            create_category(name, token)
             template_id = create_template(name, tasks, ticket_type, token)
 
             if template_id:
@@ -237,7 +235,7 @@ def run_halo_upload(csv_path, base_url, oauth_url, client_id, client_secret):
             ticket_type = data["tickettype"]
             tasks = data["tasks"]
 
-            create_category(name, ticket_type, token)
+            create_category(name, token)
             template_id = create_template(name, tasks, ticket_type, token)
 
             if template_id:
