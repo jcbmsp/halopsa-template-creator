@@ -43,13 +43,12 @@ def resolve_type_id(tickettype):
 
     tickettype = tickettype.strip().lower()
 
-    if tickettype == "Incident":
+    if tickettype == "incident":
         return 1
-    if tickettype == "Service Request":
+    if tickettype == "service request":
         return 3
 
     return 1  # fallback
-
 
 # -------------------------------------------
 # Process CSV
