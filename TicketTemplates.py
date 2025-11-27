@@ -35,45 +35,42 @@ def get_oauth_token():
 
 
 # -------------------------------------------
-# TicketType → ID Mapping
+# TicketType → ID Mapping (Dynamic from Halo API)
 # -------------------------------------------
 def resolve_type_id(tickettype, token):
+
     if not tickettype:
-        print("⚠ No ticket type provided. Defaulting to Incident (ID=1)")
         return 1
 
-    tickettype_clean = tickettype.strip().lower()
-
-    url = f"{API_BASE_URL}/tickettype"
-    headers = {"Authorization": f"Bearer {token}"}
-
     try:
-        resp = requests.get(url, headers=headers)
-        resp.raise_for_status()
-        tickettypes = resp.json()
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
 
+        url = f"{API_BASE_URL}/tickettype"
+        response = requests.get(url, headers=headers)
+
+        if response.status_code != 200:
+            print(f"⚠️ Failed to fetch ticket types → {response.text}")
+            return 1
+
+        tickettypes = response.json()
+        search_value = tickettype.strip().lower()
+
+        # Find matching ticket type by name
         for t in tickettypes:
-            print(t.get("id"), t.get("name"))
+            name = str(t.get("name", "")).strip().lower()
+            if name == search_value:
+                return t.get("id", 1)
 
-        # ---- 1. Exact match ----
-        for t in tickettypes:
-            if t.get("name", "").strip().lower() == tickettype_clean:
-                print(f"✔ Exact match → {t['name']} (ID={t['id']})")
-                return t["id"]
-
-        # ---- 2. Partial match ----
-        for t in tickettypes:
-            api_name = t.get("name", "").strip().lower()
-            if tickettype_clean in api_name or api_name in tickettype_clean:
-                print(f"✔ Partial match → {t['name']} (ID={t['id']})")
-                return t["id"]
-
-        print("❌ No match found. Using fallback ID=1")
+        print(f"⚠️ TicketType '{tickettype}' not found in Halo. Using fallback ID=1.")
         return 1
 
     except Exception as e:
-        print(f"⚠ Error retrieving ticket types: {e}")
+        print(f"⚠️ Error resolving ticket type ID: {e}")
         return 1
+
 
 # -------------------------------------------
 # Process CSV
@@ -81,7 +78,6 @@ def resolve_type_id(tickettype, token):
 def process_csv(file_path):
     tasks_map = {}
 
-    # Try UTF-8, fallback to cp1252
     try:
         with open(file_path, newline='', encoding='utf-8-sig') as csvfile:
             reader = csv.DictReader(csvfile)
@@ -92,7 +88,6 @@ def process_csv(file_path):
             reader = csv.DictReader(csvfile)
             rows = list(reader)
 
-    # Process rows
     for row in rows:
         try:
             key = f"{row['Type']}>{row['Subtype']}>{row['Item']}"
@@ -145,7 +140,7 @@ def create_category(name, token):
 # -------------------------------------------
 def create_template(name, tasks, ticket_type, token):
 
-    tickettype_id = resolve_type_id(tickettype, token)
+    tickettype_id = resolve_type_id(ticket_type, token)
 
     template_data = [
         {
@@ -276,6 +271,3 @@ def run_halo_upload(csv_path, base_url, oauth_url, client_id, client_secret):
 # Run if standalone
 if __name__ == "__main__":
     main()
-	
-
-
