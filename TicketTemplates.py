@@ -52,12 +52,12 @@
         headers = {"Authorization": f"Bearer {token}"}
 
         try:
-            resp = requests.get(url, headers=headers)
-            resp.raise_for_status()
-            tickettypes = resp.json()
+            ttype_resp = requests.get(url, headers=headers)
+            ttype_resp.raise_for_status()
+            tickettypes = ttype_resp.json()
 
             for t in tickettypes:
-                print("   ➤", t.get("id"), t.get("name"))
+                print(t.get("id"), t.get("name"))
 
         # ----------------------------------------
         # 1. Exact match (case-insensitive)
