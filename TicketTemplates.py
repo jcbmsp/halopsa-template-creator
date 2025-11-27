@@ -1,6 +1,7 @@
     import csv
     import requests
     import os
+    import re
 
     # Define constants for API URLs
     API_BASE_URL = "yourhaloapiURL"
@@ -40,30 +41,53 @@
     def resolve_type_id(tickettype, token):
 
         if not tickettype:
-            return 1  # fallback
+            print("⚠️ No ticket type provided, defaulting to Incident (ID=1)")
+            return 1
 
+        tickettype_original = tickettype
         tickettype_clean = tickettype.strip().lower()
+        tickettype_compact = re.sub(r"[^a-z0-9]", "", tickettype_clean)
 
-        # Build API URL
         url = f"{API_BASE_URL}/tickettype"
-
-        headers = {
-            "Authorization": f"Bearer {token}"
-        }
+        headers = {"Authorization": f"Bearer {token}"}
 
         try:
             resp = requests.get(url, headers=headers)
             resp.raise_for_status()
             tickettypes = resp.json()
 
-            # Find matching ticket type from Halo
+            for t in tickettypes:
+                print("   ➤", t.get("id"), t.get("name"))
+
+        # ----------------------------------------
+        # 1. Exact match (case-insensitive)
+        # ----------------------------------------
             for t in tickettypes:
                 name = t.get("name", "").strip().lower()
-
                 if name == tickettype_clean:
-                    return t.get("id", 1)  # return the matched ID
+                    print(f"✔ Exact match found → {t['name']} (ID={t['id']})")
+                    return t["id"]
 
-        # No match found → fallback
+        # ----------------------------------------
+        # 2. Compact match (remove spaces & symbols)
+        # ----------------------------------------
+            for t in tickettypes:
+                name_clean = t.get("name", "").strip().lower()
+                name_compact = re.sub(r"[^a-z0-9]", "", name_clean)
+                if name_compact == tickettype_compact:
+                    print(f"✔ Compact match found → {t['name']} (ID={t['id']})")
+                    return t["id"]
+
+        # ----------------------------------------
+        # 3. Partial match
+        # ----------------------------------------
+            for t in tickettypes:
+                name_clean = t.get("name", "").strip().lower()
+                if tickettype_clean in name_clean or name_clean in tickettype_clean:
+                    print(f"✔ Partial match found → {t['name']} (ID={t['id']})")
+                    return t["id"]
+
+            print("❌ No match found. Defaulting to Incident (ID=1)")
             return 1
 
         except Exception as e:
